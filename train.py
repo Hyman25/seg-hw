@@ -103,6 +103,7 @@ if __name__ == '__main__':
     DEVICE = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
 
     # 创建模型
+    print(f'creating model: {args.model}')
     if args.model.lower() == 'unet':
         model = UNET(in_channels=3, out_channels=1).to(DEVICE)
     elif args.model.lower() == 'ures':
@@ -113,6 +114,7 @@ if __name__ == '__main__':
         raise NotImplementedError
 
     # 损失函数: iou loss / bce with dice loss
+    print(f'creating loss: {args.loss}')
     if args.loss.lower() == 'iou':
         loss_fn = IoULoss().to(DEVICE)
     elif args.loss.lower() == 'dice':
@@ -124,6 +126,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)    
     
     # 加载数据
+    print(f'creating dataloader: {args.data_path}')
     train_set = KITTIDataset(data_path=args.data_path, split='train', img_size=args.img_size, aug=args.augment)
     val_set   = KITTIDataset(data_path=args.data_path, split='val', img_size=args.img_size, aug=args.augment)
     test_set  = KITTIDataset(data_path=args.data_path, split='test', img_size=args.img_size, aug=False)
@@ -139,12 +142,14 @@ if __name__ == '__main__':
 
     # 加载模型
     if args.resume_path:
+        print(f'resume model and optim from: {args.resume_path}')
         state = torch.load(args.resume_path, map_location='cpu')
         start_epoch = state['epoch']
         model.load_state_dict(state['model'])
         optimizer.load_state_dict(state['optim'])
         history = state['history']
         best_loss = np.min(np.array(history['val_loss']))
+        print(f'model and optim resumed: epoch {start_epoch}')
 
     # 训练
     for epoch in range(start_epoch+1, args.epoch):
