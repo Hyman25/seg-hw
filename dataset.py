@@ -4,16 +4,18 @@ import numpy as np
 from PIL import Image
 import albumentations as A
 from torch.utils.data import Dataset, DataLoader
+from utils import AUG_SIZE
 
 
 class KITTIDataset(Dataset):
-    def __init__(self, data_path, split='train', img_size=256, aug=True):
+    def __init__(self, data_path, split='train', img_size=256, aug=False):
         
         self.imgs_path = os.path.join(data_path, 'image_2')
         self.mask_path = os.path.join(data_path, 'gt_image_2')
         
         self.img_size = img_size
         self.aug = aug
+        self.aug_size = AUG_SIZE if aug else 1
 
         self.imgs = sorted(os.listdir(self.imgs_path))
         self.mask = sorted(os.listdir(self.mask_path))
@@ -56,9 +58,11 @@ class KITTIDataset(Dataset):
         return mask
 
     def __len__(self):
-        return len(self.imgs)
+        return len(self.imgs) * self.aug_size
     
     def __getitem__(self, index):
+        index = index // self.aug_size
+        
         img  = Image.open(os.path.join(self.imgs_path, self.imgs[index])).resize((self.img_size, self.img_size))
         img  = np.array(img).astype(np.float32) / 255.0
         mask = Image.open(os.path.join(self.mask_path, self.mask[index])).resize((self.img_size, self.img_size))

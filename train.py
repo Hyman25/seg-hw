@@ -54,6 +54,8 @@ def plot_loss(history, path):
     plt.xlabel('epoch')
     plt.legend()
     plt.savefig(os.path.join(path, 'loss.png'))
+    np.save(os.path.join(path, 'train_loss.npy'), np.array(history['train_loss']))
+    np.save(os.path.join(path, 'val_loss.npy'), np.array(history['val_loss']))
 
 
 def save_args(args):
@@ -68,8 +70,9 @@ def save_args(args):
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--name', '-n', type=str, default='', help='specify an experiment name')
-    parser.add_argument('--epoch', '-e', type=int, default=1500)
+    parser.add_argument('--epoch', '-e', type=int, default=200)
     parser.add_argument('--img_size', '-s', type=int, default=256)
     parser.add_argument('--batch_size', '-bs', type=int, default=8)
     parser.add_argument('--gpu_id', '-g', type=int, default=5)
@@ -79,26 +82,33 @@ def parse_args():
     parser.add_argument('--data_path', '-d', type=str, default='/mnt/diskc/hh/datasets/KITTI_Road/training')
     parser.add_argument('--resume_path', '-r', type=str, default=None, help='resume from path')
     parser.add_argument('--print_freq', type=int, default=10)
-    parser.add_argument('--save_freq', type=int, default=100)
-    return parser.parse_args()
+    parser.add_argument('--save_freq', type=int, default=10)
+    parser.add_argument('--pretrained', action='store_true', help='use pretrained in uresnet and fpn')
+    parser.add_argument('--no_aug', action='store_true', help='data augmentation flag for train and val, see dataset.py and AUG_SIZE')
+    args = parser.parse_args()
+
+    args.augment = not args.no_aug
+    if not args.name:
+        args.name = args.model
+    args.name = './checkpoints/' + time.strftime("%Y%m%d_%H%M%S", time.localtime()) + '_' + args.name
+    save_args(args)
+    setup_seed(args.seed)
+
+    return args
 
 
 if __name__ == '__main__':
-    setup_seed()
-
     args = parse_args()
-    args.name = './checkpoints/' + args.name + '_' + time.strftime("%Y%m%d-%H%M%S", time.localtime()) 
-    save_args(args)
-
+    
     DEVICE = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
 
     # 创建模型
     if args.model.lower() == 'unet':
         model = UNET(in_channels=3, out_channels=1).to(DEVICE)
     elif args.model.lower() == 'ures':
-        model = UnetResNet(in_channels=3, out_channels=1).to(DEVICE)
+        model = UnetResNet(in_channels=3, out_channels=1, pretrained=args.pretrained).to(DEVICE)
     elif args.model.lower() == 'fpn':
-        model = FPN(in_channels=3, out_channels=1).to(DEVICE)
+        model = FPN(in_channels=3, out_channels=1, pretrained=args.pretrained).to(DEVICE)
     else:
         raise NotImplementedError
 
@@ -114,8 +124,8 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)    
     
     # 加载数据
-    train_set = KITTIDataset(data_path=args.data_path, split='train', img_size=args.img_size)
-    val_set   = KITTIDataset(data_path=args.data_path, split='val', img_size=args.img_size, aug=False)
+    train_set = KITTIDataset(data_path=args.data_path, split='train', img_size=args.img_size, aug=args.augment)
+    val_set   = KITTIDataset(data_path=args.data_path, split='val', img_size=args.img_size, aug=args.augment)
     test_set  = KITTIDataset(data_path=args.data_path, split='test', img_size=args.img_size, aug=False)
 
     train_dataloader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
@@ -152,7 +162,7 @@ if __name__ == '__main__':
         if val_loss < best_loss:
             best_loss = val_loss
             best_epoch = epoch
-            print(f'best epch: {best_epoch}')
+            print(f'best epch: {best_epoch}, saving checkpoints...')
             torch.save({
                 'epoch': best_epoch,
                 'model': model.state_dict(),
@@ -168,7 +178,5 @@ if __name__ == '__main__':
                 'optim': optimizer.state_dict(),
                 'history': history,
                 }, os.path.join(args.name, 'latest_model_state.bin'))
-            np.save(os.path.join(args.name, 'train_loss.npy'), np.array(history['train_loss']))
-            np.save(os.path.join(args.name, 'val_loss.npy'), np.array(history['val_loss']))
 
     print(f'best epch: {best_epoch}')

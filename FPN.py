@@ -10,6 +10,9 @@ import torchvision
 
 from utils import get_encoder
 
+import warnings
+warnings.filterwarnings("ignore")
+
 
 class Model(nn.Module):
 

@@ -1,6 +1,9 @@
 import torch
 from torch import nn
 import torchvision.transforms.functional as TF
+import warnings
+warnings.filterwarnings("ignore")
+
 
 
 class DoubleConv(nn.Module):

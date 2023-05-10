@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import random
 
+AUG_SIZE = 10
 
 def setup_seed(seed=42):
     torch.manual_seed(seed)
