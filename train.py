@@ -15,8 +15,9 @@ import matplotlib.pyplot as plt
 import argparse
 import time
 from utils import setup_seed
+from test import MetricRecorder
 
-def train_epoch(model, data_loader, loss_fn, optimizer, device):
+def train_epoch(model, data_loader, loss_fn, optimizer, metric, device):
     model = model.train()
     losses = []
     for train_input, train_mask in tqdm(data_loader, ncols=120):
@@ -28,10 +29,11 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device):
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
+        metric.update(outputs.detach().cpu().numpy(), train_mask.detach().cpu().numpy())
     return np.mean(losses)
 
 
-def eval_model(model, data_loader, loss_fn, device):
+def eval_model(model, data_loader, loss_fn, metric, device):
     model = model.eval()
     losses = []
     with torch.no_grad():
@@ -41,6 +43,7 @@ def eval_model(model, data_loader, loss_fn, device):
             outputs=model(val_input.float())
             loss = loss_fn(outputs.float(), val_mask.float())
             losses.append(loss.item())
+            metric.update(outputs.detach().cpu().numpy(), val_mask.detach().cpu().numpy())
     return np.mean(losses)
 
 
@@ -57,6 +60,21 @@ def plot_loss(history, path):
     np.save(os.path.join(path, 'train_loss.npy'), np.array(history['train_loss']))
     np.save(os.path.join(path, 'val_loss.npy'), np.array(history['val_loss']))
 
+def plot_metric(history, path, metric='maxf'):
+    if f'train_{metric}' not in history:
+        print(f'no {metric} in history')
+        return
+    plt.figure()
+    plt.plot(history[f'train_{metric}'], label=f'train {metric}')
+    plt.plot(history[f'val_{metric}'], label=f'val {metric}')
+    plt.title('Training history')
+    plt.ylim(0, 1)
+    plt.ylabel(metric)
+    plt.xlabel('epoch')
+    plt.legend()
+    plt.savefig(os.path.join(path, f'{metric}.png'))
+    np.save(os.path.join(path, f'train_{metric}.npy'), np.array(history[f'train_{metric}']))
+    np.save(os.path.join(path, f'val_{metric}.npy'), np.array(history[f'val_{metric}']))
 
 def save_args(args):
     os.makedirs(f'{args.name}')
@@ -153,15 +171,39 @@ if __name__ == '__main__':
 
     # 训练
     for epoch in range(start_epoch+1, args.epoch):
-        train_loss = train_epoch(model,train_dataloader,loss_fn, optimizer, DEVICE)
-        val_loss = eval_model(model,val_dataloader,loss_fn, DEVICE)        
+        # 指标
+        train_metric = MetricRecorder()
+        val_metric = MetricRecorder()
+    
+        train_loss = train_epoch(model,train_dataloader,loss_fn, optimizer, train_metric, DEVICE)
+        val_loss = eval_model(model,val_dataloader,loss_fn, val_metric, DEVICE)        
         history['train_loss'].append(train_loss)
         history['val_loss'].append(val_loss)
+
+        train_metric_values = train_metric.show(bit_num=4)
+        val_metric_values = val_metric.show(bit_num=4)
+        metric_message = '\t'
+        for k, v in train_metric_values.items():
+            history['train_'+k].append(v)
+            try: # only output float metric
+                metric_message += f'Train {k} {v:.04f}, '
+            except:
+                pass
+        metric_message += '\n\t'
+        for k, v in val_metric_values.items():
+            history['val_'+k].append(v)
+            try:
+                metric_message += f'Val   {k} {v:.04f}, '
+            except:
+                pass
         
         print(f'Epoch {epoch}/{args.epoch}, Train loss {train_loss}, Val loss {val_loss}')
+        print(metric_message)
 
         if (epoch+1) % args.print_freq == 0:
             plot_loss(history, args.name)
+            for metric in ['maxf', 'meanf', 'PRE', 'REC', 'FPR', 'FNR', 'ACC', 'AP']:
+                plot_metric(history, args.name, metric)
 
         # 最佳结果
         if val_loss < best_loss:
