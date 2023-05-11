@@ -1,11 +1,12 @@
 import os
+from typing import Any
 import numpy as np
 import torch
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 class MetricRecorder:
-    def __init__(self, thds_for_fm=255, beta_for_fm=1, th_for_acc=0.5, eps=1e-8):
+    def __init__(self, thds_for_fm=255, beta_for_fm=1, th_for_acc=0.5, eps=1e-8, use_AP=False, use_SM=False, use_EM=False):
         '''
         :param thds_for_fm: 计算fm时，阈值的个数
         :param beta_for_fm: 计算fm时，beta的值
@@ -16,12 +17,22 @@ class MetricRecorder:
         self.acc = cal_acc(th_for_acc, eps)
         self.sm = cal_sm()
         self.em = cal_em()
+        self.ap = cal_ap()
+        self.use_AP = use_AP
+        self.use_SM = use_SM
+        self.use_EM = use_EM
 
     def update(self, pre, gt):
+        pre = pre.reshape(-1)
+        gt = gt.reshape(-1)
         self.fm.update(pre, gt)
         self.acc.update(pre, gt)
-        # self.sm.update(pre, gt)
-        # self.em.update(pre, gt)
+        if self.use_AP:
+            self.ap.update(pre, gt)
+        if self.use_SM:
+            self.sm.update(pre, gt)
+        if self.use_EM:
+            self.em.update(pre, gt)
 
     def show(self, bit_num: int) -> tuple:
         '''
@@ -30,13 +41,26 @@ class MetricRecorder:
         '''
         f, maxf, meanf, p, r = self.fm.show() # [thds,], [1,], [1,], [thds,], [thds,]
         PRE, REC, FPR, FNR, ACC = self.acc.show() # [1,], [1,], [1,], [1,], [1,]
-        # sm = self.sm.show() # [1,]
-        # em = self.em.show() # [1,]
         maxf, meanf, PRE, REC, FPR, FNR, ACC = self._round_bit_num(
             data=[maxf, meanf, PRE, REC, FPR, FNR, ACC], bit_num=bit_num
         )
-        # sm, em = self,_round_bit_num(data=[sm, em], bit_num=bit_num)
-        return (maxf, meanf, f, p, r), PRE, REC, FPR, FNR, ACC #, sm, em
+        output = {
+            'maxf': maxf, 'meanf': meanf, 'f': f, 'p': p, 'r': r,
+            'PRE': PRE, 'REC': REC, 'FPR': FPR, 'FNR': FNR, 'ACC': ACC
+        }
+        if self.use_AP:
+            AP = self.ap.show() # [1,]
+            AP = self._round_bit_num(data=[AP], bit_num=bit_num)
+            output['AP'] = AP
+        if self.use_SM:
+            sm = self.sm.show()
+            sm = self._round_bit_num(data=[sm], bit_num=bit_num)
+            output['sm'] = sm
+        if self.use_EM:
+            em = self.em.show()
+            em = self._round_bit_num(data=[em], bit_num=bit_num)
+            output['em'] = em
+        return output
 
     def _round_bit_num(self, data: list, bit_num: int):
         results = []
@@ -101,7 +125,7 @@ class cal_fm(object):
         recall = np.mean(self.recall, axis=0) # [thds,]
         fmeasure = (1 + self.beta**2) * precision * recall / ((self.beta**2) * precision + recall + self.eps) # [thds,]
         fmeasure_avg = np.mean(self.meanF, axis=0) # [1,]
-        return fmeasure, fmeasure.max(), fmeasure_avg[0], precision, recall
+        return fmeasure, fmeasure.max(), fmeasure_avg, precision, recall
 
 
 class cal_acc(object):
@@ -135,6 +159,25 @@ class cal_acc(object):
         FNR = self.FN / (self.FN + self.TP + self.esp)
         ACC = (self.TP + self.TN) / (self.TP + self.TN + self.FP + self.FN + self.esp)
         return PRE, REC, FPR, FNR, ACC
+
+
+class cal_ap(object):
+    def __init__(self) -> None:
+        self.pair = []
+
+    def update(self, pred, gt):
+        self.pair = self.pair + list(zip(pred, gt))
+
+    def show(self):
+        data = np.array(sorted(self.pair))[:, 1] # gt [len,]
+        data_cumsum = np.cumsum(data)
+        rec = data_cumsum / len(data)
+        pre = data_cumsum / np.arange(1, len(data) + 1)
+        AP = 0.
+        for t in np.linspace(0, 1, 11):
+            if (rec >= t).any():
+                AP += np.max(pre[rec >= t])
+        return AP / 11.
 
 
 class cal_sm(object):
