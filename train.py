@@ -15,8 +15,9 @@ import matplotlib.pyplot as plt
 import argparse
 import time
 from utils import setup_seed
+from test import MetricRecorder
 
-def train_epoch(model, data_loader, loss_fn, optimizer, device):
+def train_epoch(model, data_loader, loss_fn, optimizer, metric, device):
     model = model.train()
     losses = []
     for train_input, train_mask in tqdm(data_loader, ncols=120):
@@ -28,10 +29,11 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device):
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
+        metric.update(outputs.detach().cpu().numpy(), train_mask.detach().cpu().numpy())
     return np.mean(losses)
 
 
-def eval_model(model, data_loader, loss_fn, device):
+def eval_model(model, data_loader, loss_fn, metric, device):
     model = model.eval()
     losses = []
     with torch.no_grad():
@@ -41,6 +43,7 @@ def eval_model(model, data_loader, loss_fn, device):
             outputs=model(val_input.float())
             loss = loss_fn(outputs.float(), val_mask.float())
             losses.append(loss.item())
+            metric.update(outputs.detach().cpu().numpy(), val_mask.detach().cpu().numpy())
     return np.mean(losses)
 
 
@@ -57,6 +60,21 @@ def plot_loss(history, path):
     np.save(os.path.join(path, 'train_loss.npy'), np.array(history['train_loss']))
     np.save(os.path.join(path, 'val_loss.npy'), np.array(history['val_loss']))
 
+def plot_metric(history, path, metric='maxf'):
+    if f'train_{metric}' not in history:
+        print(f'no {metric} in history')
+        return
+    plt.figure()
+    plt.plot(history[f'train_{metric}'], label=f'train {metric}')
+    plt.plot(history[f'val_{metric}'], label=f'val {metric}')
+    plt.title('Training history')
+    plt.ylim(0, 1)
+    plt.ylabel(metric)
+    plt.xlabel('epoch')
+    plt.legend()
+    plt.savefig(os.path.join(path, f'{metric}.png'))
+    np.save(os.path.join(path, f'train_{metric}.npy'), np.array(history[f'train_{metric}']))
+    np.save(os.path.join(path, f'val_{metric}.npy'), np.array(history[f'val_{metric}']))
 
 def save_args(args):
     os.makedirs(f'{args.name}')
@@ -153,15 +171,39 @@ if __name__ == '__main__':
 
     # 训练
     for epoch in range(start_epoch+1, args.epoch):
-        train_loss = train_epoch(model,train_dataloader,loss_fn, optimizer, DEVICE)
-        val_loss = eval_model(model,val_dataloader,loss_fn, DEVICE)        
+        # 指标
+        train_metric = MetricRecorder(thds_for_fm=255, beta_for_wfm=1)
+        val_metric = MetricRecorder(thds_for_fm=255, beta_for_wfm=1)
+    
+        train_loss = train_epoch(model,train_dataloader,loss_fn, optimizer, train_metric, DEVICE)
+        val_loss = eval_model(model,val_dataloader,loss_fn, val_metric, DEVICE)        
+        (train_maxf, train_meanf, train_f, train_p, train_r), train_PRE, train_REC, train_FPR, train_FNR, train_ACC = train_metric.show(bit_num=4)
+        (val_maxf, val_meanf, val_f, val_p, val_r), val_PRE, val_REC, val_FPR, val_FNR, val_ACC = val_metric.show(bit_num=4)
         history['train_loss'].append(train_loss)
         history['val_loss'].append(val_loss)
+        history['train_maxf'].append(train_maxf)
+        history['train_meanf'].append(train_meanf)
+        history['train_PRE'].append(train_PRE)
+        history['train_REC'].append(train_REC)
+        history['train_FPR'].append(train_FPR)
+        history['train_FNR'].append(train_FNR)
+        history['train_ACC'].append(train_ACC)
+        history['val_maxf'].append(val_maxf)
+        history['val_meanf'].append(val_meanf)
+        history['val_PRE'].append(val_PRE)
+        history['val_REC'].append(val_REC)
+        history['val_FPR'].append(val_FPR)
+        history['val_FNR'].append(val_FNR)
+        history['val_ACC'].append(val_ACC)
         
         print(f'Epoch {epoch}/{args.epoch}, Train loss {train_loss}, Val loss {val_loss}')
+        print(f'/t/tTrain maxf {train_maxf}, Train meanf {train_meanf}, Train PRE {train_PRE}, Train REC {train_REC}, Train FPR {train_FPR}, Train FNR {train_FNR}, Train ACC {train_ACC}')
+        print(f'/t/tVal maxf {val_maxf}, Val meanf {val_meanf}, Val PRE {val_PRE}, Val REC {val_REC}, Val FPR {val_FPR}, Val FNR {val_FNR}, Val ACC {val_ACC}')
 
         if (epoch+1) % args.print_freq == 0:
             plot_loss(history, args.name)
+            for metric in ['maxf', 'meanf', 'PRE', 'REC', 'FPR', 'FNR', 'ACC']:
+                plot_metric(history, args.name, metric)
 
         # 最佳结果
         if val_loss < best_loss:
