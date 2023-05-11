@@ -71,4 +71,4 @@ class UNET(nn.Module):
             concat_skip = torch.cat((sc, x), dim=1) #concatination step
             x = self.ups[idx+1](concat_skip) #step 2
 
-        return self.final_conv(x) #last step in forward            
+        return torch.sigmoid(self.final_conv(x)) #last step in forward            

@@ -66,7 +66,7 @@ class EncoderDecoder(Model):
 
         with torch.no_grad():
             x = self.forward(x)
-        return x
+        return torch.sigmoid(x)
 
 
 # FPN block

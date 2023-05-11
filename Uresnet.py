@@ -133,4 +133,4 @@ class UnetResNet(nn.Module):
         dec1 = self.dec1(dec2)
         dec0 = self.dec0(dec1)
 
-        return self.final(dec0)
+        return torch.sigmoid(self.final(dec0))

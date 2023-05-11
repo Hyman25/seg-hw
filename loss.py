@@ -7,8 +7,7 @@ class IoULoss(nn.Module):
         self.eps = 1e-7
 
     def forward(self, logits, y_true):
-        logits = torch.sigmoid(logits)
-
+        # logits = torch.sigmoid(logits)
         # Flatten the input tensors
         logits = logits.view(-1)        
         y_true = y_true.view(-1)
@@ -41,14 +40,15 @@ class BCEDiceLoss(nn.Module):
         self.eps = 1e-7
         self.smooth = smooth
         self.class_weights = class_weights
-        self.nll = torch.nn.BCEWithLogitsLoss(weight=weight)
+        # self.nll = torch.nn.BCEWithLogitsLoss(weight=weight)
+        self.nll = torch.nn.BCELoss(weight=weight)
 
     def forward(self, logits, y_true):
         loss = self.bce_weight * self.nll(logits, y_true)
         if self.bce_weight < 1.:
             dice_loss = 0.
             batch_size, num_classes = logits.shape[:2]
-            logits = torch.sigmoid(logits)
+            # logits = torch.sigmoid(logits)
             for c in range(num_classes):
                 iflat = logits[:, c,...].view(batch_size, -1)
                 tflat = y_true[:, c,...].view(batch_size, -1)
