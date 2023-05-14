@@ -2,6 +2,7 @@ import torchvision
 import torch
 import numpy as np
 import random
+from PIL import Image
 
 AUG_SIZE = 10
 
@@ -36,3 +37,16 @@ def get_encoder(model, pretrained=True):
     }
 
     return encoder, filters_dict[model]
+
+
+def tensor2numpy(t):
+    return t.detach().cpu().numpy()
+
+
+def save_img(data: np.ndarray, path):
+    if data.shape[2] not in [3, 1]:
+        raise ValueError
+    if data.shape[2] == 1:
+        data = np.squeeze(data, axis=2)
+    img = Image.fromarray((data*255).astype(np.uint8))
+    img.save(path)
